@@ -3,43 +3,54 @@ PyTorch Nöral Ağına Kuantum Katmanı Eklemek
 ============================================
 
 .. warning::
-    Belgenin geri kalanda ev dizinine Miniconda kurulumu yapılmış kabul edilmektedir. Ev dizininizde Miniconda kurulu değilse kurulumu :ref:`miniconda-kurulum` takip ederek yapabilirsiniz. 
+    Belgeyi okumaya başlamadan önce :ref:`qcomp_setup`'da anlatıldığı gibi içinde Pennylane ve Lightning-GPU kurulu bir konteyner oluşturduğunuzdan emin olun.
+    
+Gerekli kütüphaneleri yüklemek için bu konteyneri aşağıdaki gibi açınız 
 
-    Merkezi anaconda kullanımı hakkındaki bilgiye ulaşmak için :ref:`tıklayınız... <merkezi-anaconda>`.
-        
-Mevcut shell oturumunuzda conda’nın temel ortamını etkinleştirin:
+.. code-block:: bash    
+    apptainer shell --no-home --writable --fakeroot miniconda3-user
+    # veya
+    apptainer shell --no-home --writable miniconda3-user
+
+ve sonrasında bu dokümanda bize gerekli olacak scikit-learn ve PyTorch kütüphanelerini aşağıdaki gibi yükleyiniz.
 
 .. code-block:: bash
-    
-    eval "$(/truba/home/$USER/miniconda3/bin/conda shell.bash hook)"
 
-Conda kullanarak sanal ortam yaratın ve yarattığınız ortamı aktifleştirin.
+    pip install torch torchvision torchaudio 
+    pip install scikit-learn
 
-.. code-block:: bash
-    
-    conda create --name qnn-torch-env
-    conda activate qnn-torch-env
-    conda list
+Daha sonrasında konteynerin imajını oluşturmak için:
 
-.. warning::
-    Adımları takip edebilmek için gerekli olan PyTorch paketini yüklemek için :ref:`deep-learning-virtual-env`  PennyLane paketinin kurulumu için de :ref:`qcomp_setup`  sayfasına göz atabilirsiniz.
-    
-.. warning::
-    Ayrıca gerekli olan scikit-learn kütüphanesini aşağıdaki gibi kurabilirsiniz.    
-    
-    .. code-block:: bash
-    
-       pip3 install -U scikit-learn
-		
-.. note::
-    İstediğiniz zaman sanal ortamı kaldırıp baştan başlayabilirsiniz:
+.. dropdown:: :octicon:`codespaces;1.5em;secondary` Konteyner İmajı Oluşturma(Tıklayınız)
+    :color: info
 
-    .. code-block:: bash
+        .. tab-set::
 
-        conda deactivate
-        conda remove -n qnn-torch-env --all
-        conda create --name qnn-torch-env
-        conda activate qnn-torch-env
+            .. tab-item:: İş Gönderme
+
+                .. code-block:: bash
+
+                    sbatch build.slurm
+
+            .. tab-item:: build.slurm
+
+                .. code-block:: bash
+            
+                    #!/bin/bash
+                    
+                    #SBATCH --output=slurm-%j.out
+                    #SBATCH --error=slurm-%j.err
+                    #SBATCH --time=00:15:00
+                    #SBATCH --job-name=build
+
+                    #SBATCH -p debug
+                    #SBATCH --partition=orfoz
+                    #SBATCH --ntasks=1
+                    #SBATCH --nodes=1
+                    #SBATCH -C weka
+                    #SBATCH --cpus-per-task=55
+
+                    apptainer build miniconda3-user.sif miniconda3-user
 
 Klasik Torch Katmanlarından oluşan bir nöral ağ oluşturma
 ==========================================================
@@ -84,18 +95,14 @@ Burada kolay anlaşılması için basit bir veri kümesi olan ``scikit-learn`` i
 Quantum Node Oluşturma
 ======================
 
-PennyLane kütüphanesi içindeki herhangi bir cihaz, operasyon veya ölçüm Quantum Node oluştururken kullanılabilir. Ancak, Quantum Node'u PyTorch katmanına çevirebilmemiz için Quantum Node ``inputs`` isimli bir argümana sahip olmalı ve ayrıca diğer bütün argümanları array veya tensör olmalıdır. Bu diğer argümanlar eğitilebilir ağırlık olarak kullanılacak. Biz ``templates`` modülündeki ``default.qubit`` simülatorünü ve operasyonları kullanrak 2 kübit bulunan bir node oluşturuyoruz.
-
-.. note::
-    Templates hakkında daha fazla bilgi için `dokümantasyon <https://pennylane.readthedocs.io/en/latest/introduction/templates.html>`_ sayfasını ziyaret edebilirsiniz.
-
+Modelimizi GPU'da çalıştırabilmek için simülatör olarak ``lightning.gpu`` kullanıyoruz. Buradaki ``weights`` argümanı eğitilebilir ağırlık olarak kullanılacak.
 
 .. code-block:: python
 
     import pennylane as qml
 
     n_qubits = 2
-    dev = qml.device("default.qubit", wires=n_qubits)
+    dev = qml.device("lightning.gpu", wires=n_qubits)
 
     @qml.qnode(dev)
     def qnode(inputs, weights):
@@ -114,7 +121,7 @@ Bu işlem için Quantum Node'a argüman olarak gelen tüm eğitilebilir ağırl�
     n_layers = 6
     weight_shapes = {"weights": (n_layers, n_qubits)}
 
-Bizim örneğimizdeki ``weights`` argümanının şekli (n_layers, n_qubits) olarak ``BasicEntanglerLayers()`` 'a aktarıldı. Dictionary'mizi oluşturduktan sonra kolay bir şekilde Quantum Node'umuzu bir Keras katmanına çevirebiliriz.
+Bizim örneğimizdeki ``weights`` argümanının şekli (n_layers, n_qubits) olarak ``BasicEntanglerLayers()`` 'a aktarıldı. Dictionary'mizi oluşturduktan sonra kolay bir şekilde Quantum Node'umuzu bir Torch katmanına çevirebiliriz.
 
 
 .. code-block:: python
@@ -188,90 +195,121 @@ Biz bu örnek için standart ``SGD optimizer`` 'ını ve ``mean absolute error``
     accuracy = sum(correct) / len(correct)
     print(f"Accuracy: {accuracy * 100}%")
 
+Sıralı Hibrit Modeli Kuyruğa Gönderme
+=====================================
+Aşağıdaki gibi bir slurm betiği hazırlayarak yukarıda oluşturduğumuz sıralı hibrit modeli kuyruğa gönderebiliriz.
 
-Sıralı Model Kodunun Tam Hali
-=============================
+.. dropdown:: :octicon:`codespaces;1.5em;secondary` Sıralı Model (Tıklayınız)
+    :color: info
 
-``sequential_qnn.py``
+        .. tab-set::
 
-.. code-block:: python
+            .. tab-item:: İş Gönderme
 
-    import torch
-    import pennylane as qml
-    import numpy as np
-    from sklearn.datasets import make_moons
+                .. code-block:: bash
+
+                    sbatch sequential_qnn.slurm
+
+            .. tab-item:: sequential_qnn.slurm
+
+                .. code-block:: bash
+            
+                    #!/bin/bash
+
+                    #SBATCH --output=slurm-%j.out
+                    #SBATCH --error=slurm-%j.err
+                    #SBATCH --time=00:15:00
+                    #SBATCH --job-name=sequential_qnn
+
+                    #SBATCH -p debug
+                    #SBATCH --partition=akya-cuda
+                    #SBATCH --gres=gpu:1
+                    #SBATCH --ntasks=1
+                    #SBATCH --nodes=1
+                    #SBATCH --cpus-per-task=10
+
+                    apptainer exec --nv miniconda3-user.sif python sequential_qnn.py
+
+            .. tab-item:: sequential_qnn.py
+                
+                .. code-block:: python
+
+                    import torch
+                    import pennylane as qml
+                    import numpy as np
+                    from sklearn.datasets import make_moons
 
 
-    # Rastgele sayılar için tohum değerlerini belirleme
-    torch.manual_seed(42)
-    np.random.seed(42)
+                    # Rastgele sayılar için tohum değerlerini belirleme
+                    torch.manual_seed(42)
+                    np.random.seed(42)
 
-    X, y = make_moons(n_samples=200, noise=0.1)
-    y_ = torch.unsqueeze(torch.tensor(y), 1)  # one-hot encoding ile kodlanmış etiketler
-    y_hot = torch.scatter(torch.zeros((200, 2)), 1, y_, 1)
+                    X, y = make_moons(n_samples=200, noise=0.1)
+                    y_ = torch.unsqueeze(torch.tensor(y), 1)  # one-hot encoding ile kodlanmış etiketler
+                    y_hot = torch.scatter(torch.zeros((200, 2)), 1, y_, 1)
 
-    n_qubits = 2
-    dev = qml.device("default.qubit", wires=n_qubits)
+                    n_qubits = 2
+                    dev = qml.device("lightning.gpu", wires=n_qubits)
 
-    # Quantum Node oluşturma
-    @qml.qnode(dev)
-    def qnode(inputs, weights):
-        qml.AngleEmbedding(inputs, wires=range(n_qubits))
-        qml.BasicEntanglerLayers(weights, wires=range(n_qubits))
-        return [qml.expval(qml.PauliZ(wires=i)) for i in range(n_qubits)]
+                    # Quantum Node oluşturma
+                    @qml.qnode(dev)
+                    def qnode(inputs, weights):
+                        qml.AngleEmbedding(inputs, wires=range(n_qubits))
+                        qml.BasicEntanglerLayers(weights, wires=range(n_qubits))
+                        return [qml.expval(qml.PauliZ(wires=i)) for i in range(n_qubits)]
 
-    n_layers = 6
-    weight_shapes = {"weights": (n_layers, n_qubits)}
+                    n_layers = 6
+                    weight_shapes = {"weights": (n_layers, n_qubits)}
 
-    # Quantum Node'u kuantum katmanına çevirme
-    qlayer = qml.qnn.TorchLayer(qnode, weight_shapes)
+                    # Quantum Node'u kuantum katmanına çevirme
+                    qlayer = qml.qnn.TorchLayer(qnode, weight_shapes)
 
-    # Modeli oluşturma
-    clayer_1 = torch.nn.Linear(2, 2)
-    clayer_2 = torch.nn.Linear(2, 2)
-    softmax = torch.nn.Softmax(dim=1)
-    layers = [clayer_1, qlayer, clayer_2, softmax]
-    model = torch.nn.Sequential(*layers)
+                    # Modeli oluşturma
+                    clayer_1 = torch.nn.Linear(2, 2)
+                    clayer_2 = torch.nn.Linear(2, 2)
+                    softmax = torch.nn.Softmax(dim=1)
+                    layers = [clayer_1, qlayer, clayer_2, softmax]
+                    model = torch.nn.Sequential(*layers)
 
-    # Modeli eğitme
-    opt = torch.optim.SGD(model.parameters(), lr=0.2)
-    loss = torch.nn.L1Loss()
+                    # Modeli eğitme
+                    opt = torch.optim.SGD(model.parameters(), lr=0.2)
+                    loss = torch.nn.L1Loss()
 
-    X = torch.tensor(X, requires_grad=True).float()
-    y_hot = y_hot.float()
+                    X = torch.tensor(X, requires_grad=True).float()
+                    y_hot = y_hot.float()
 
-    batch_size = 5
-    batches = 200 // batch_size
+                    batch_size = 5
+                    batches = 200 // batch_size
 
-    data_loader = torch.utils.data.DataLoader(
-        list(zip(X, y_hot)), batch_size=5, shuffle=True, drop_last=True
-    )
+                    data_loader = torch.utils.data.DataLoader(
+                        list(zip(X, y_hot)), batch_size=5, shuffle=True, drop_last=True
+                    )
 
-    epochs = 6
+                    epochs = 6
 
-    for epoch in range(epochs):
+                    for epoch in range(epochs):
 
-        running_loss = 0
+                        running_loss = 0
 
-        for xs, ys in data_loader:
-            opt.zero_grad()
+                        for xs, ys in data_loader:
+                            opt.zero_grad()
 
-            loss_evaluated = loss(model(xs), ys)
-            loss_evaluated.backward()
+                            loss_evaluated = loss(model(xs), ys)
+                            loss_evaluated.backward()
 
-            opt.step()
+                            opt.step()
 
-            running_loss += loss_evaluated
+                            running_loss += loss_evaluated
 
-        avg_loss = running_loss / batches
-        print("Average loss over epoch {}: {:.4f}".format(epoch + 1, avg_loss))
+                        avg_loss = running_loss / batches
+                        print("Average loss over epoch {}: {:.4f}".format(epoch + 1, avg_loss))
 
-    y_pred = model(X)
-    predictions = torch.argmax(y_pred, axis=1).detach().numpy()
+                    y_pred = model(X)
+                    predictions = torch.argmax(y_pred, axis=1).detach().numpy()
 
-    correct = [1 if p == p_true else 0 for p, p_true in zip(predictions, y)]
-    accuracy = sum(correct) / len(correct)
-    print(f"Accuracy: {accuracy * 100}%")
+                    correct = [1 if p == p_true else 0 for p, p_true in zip(predictions, y)]
+                    accuracy = sum(correct) / len(correct)
+                    print(f"Accuracy: {accuracy * 100}%")
 
 
 Sıralı Olmayan Hibrit Model Oluşturma
@@ -360,210 +398,132 @@ Biz bu örnek için de standart ``SGD optimizer`` 'ını ve ``mean absolute erro
     print(f"Accuracy: {accuracy * 100}%")
 
 
-Sıralı Olmayan Model Kodunun Tam Hali
-=====================================
-
-``nonsequential_qnn.py``
-
-.. code-block:: python
-
-    import torch
-    import pennylane as qml
-    import numpy as np
-    from sklearn.datasets import make_moons
-
-
-    # Rastgele sayılar için tohum değerlerini belirleme 
-    torch.manual_seed(42)
-    np.random.seed(42)
-
-    X, y = make_moons(n_samples=200, noise=0.1)
-    y_ = torch.unsqueeze(torch.tensor(y), 1)  # one-hot encoding ile kodlanmış etiketler
-    y_hot = torch.scatter(torch.zeros((200, 2)), 1, y_, 1)
-
-    n_qubits = 2
-    dev = qml.device("default.qubit", wires=n_qubits)
-
-    # Quantum Node oluşturma
-    @qml.qnode(dev)
-    def qnode(inputs, weights):
-        qml.AngleEmbedding(inputs, wires=range(n_qubits))
-        qml.BasicEntanglerLayers(weights, wires=range(n_qubits))
-        return [qml.expval(qml.PauliZ(wires=i)) for i in range(n_qubits)]
-
-    n_layers = 6
-    weight_shapes = {"weights": (n_layers, n_qubits)}
-
-    # Quantum Node'u kuantum katmanına çevirme
-    qlayer = qml.qnn.TorchLayer(qnode, weight_shapes)
-
-    # Modeli oluşturma
-    class HybridModel(torch.nn.Module):
-        def __init__(self):
-            super().__init__()
-            self.clayer_1 = torch.nn.Linear(2, 4)
-            self.qlayer_1 = qml.qnn.TorchLayer(qnode, weight_shapes)
-            self.qlayer_2 = qml.qnn.TorchLayer(qnode, weight_shapes)
-            self.clayer_2 = torch.nn.Linear(4, 2)
-            self.softmax = torch.nn.Softmax(dim=1)
-
-        def forward(self, x):
-            x = self.clayer_1(x)
-            x_1, x_2 = torch.split(x, 2, dim=1)
-            x_1 = self.qlayer_1(x_1)
-            x_2 = self.qlayer_2(x_2)
-            x = torch.cat([x_1, x_2], axis=1)
-            x = self.clayer_2(x)
-            return self.softmax(x)
-
-    model = HybridModel()
-
-    # Modeli eğitme
-    opt = torch.optim.SGD(model.parameters(), lr=0.2)
-    loss = torch.nn.L1Loss()
-
-    X = torch.tensor(X, requires_grad=True).float()
-    y_hot = y_hot.float()
-
-    batch_size = 5
-    batches = 200 // batch_size
-
-    data_loader = torch.utils.data.DataLoader(
-        list(zip(X, y_hot)), batch_size=5, shuffle=True, drop_last=True
-    )
-
-    epochs = 6
-
-    for epoch in range(epochs):
-
-        running_loss = 0
-
-        for xs, ys in data_loader:
-            opt.zero_grad()
-
-            loss_evaluated = loss(model(xs), ys)
-            loss_evaluated.backward()
-
-            opt.step()
-
-            running_loss += loss_evaluated
-
-        avg_loss = running_loss / batches
-        print("Average loss over epoch {}: {:.4f}".format(epoch + 1, avg_loss))
-
-    y_pred = model(X)
-    predictions = torch.argmax(y_pred, axis=1).detach().numpy()
-
-    correct = [1 if p == p_true else 0 for p, p_true in zip(predictions, y)]
-    accuracy = sum(correct) / len(correct)
-    print(f"Accuracy: {accuracy * 100}%")
-
-
-sbatch Kullanarak Kuyruğa İş Gönderme
+Sıralı Olmayan Modeli Kuyruğa Gönderme
 ======================================
+Benzer şekilde sıralı olmayan hibrit model için de aşağıdaki gibi bir slurm betiği hazırlayarak kuyruğa gönderebiliriz.
 
-Yukarda hazırladığımız python dosyalarını kuyruğa nasıl gönderebileceğimizi göreceğiz.
+.. dropdown:: :octicon:`codespaces;1.5em;secondary` Sıralı Olmayan Model (Tıklayınız)
+    :color: info
 
-Kuyruğa iş göndermek için bir `slurm betiği <https://slurm.schedmd.com/sbatch.html>`_ hazırlayın: ``qnn-job.sh``
+        .. tab-set::
 
-.. code-block:: bash
+            .. tab-item:: İş Gönderme
 
-    #!/bin/bash
-    #SBATCH -p debug                 # Kuyruk adi: Bu gibi deneme kodlari için debug kuyrugunu kullaniyoruz 
-    #SBATCH -C akya-cuda             # Kisitlama: GPU bulunan bir sunucuyu  verdiğinizden emin olun.
-    #SBATCH -A [USERNAME]            # Kullanici adi
-    #SBATCH -J sequential_qnn        # Gonderilen isin ismi
-    #SBATCH -o sequential_qnn.out    # Ciktinin yazilacagi dosya adi
-    #SBATCH --gres=gpu:1             # Her bir sunucuda kac GPU istiyorsunuz? Kumeleri kontrol edin.
-    #SBATCH -N 1                     # Gorev kac node'da calisacak?
-    #SBATCH -n 1                     # Ayni gorevden kac adet calistirilacak?
-    #SBATCH --cpus-per-task 10       # Her bir gorev kac cekirdek kullanacak? Kumeleri kontrol edin.
-    #SBATCH --time=0:15:00           # Sure siniri koyun.
-    #SBATCH --error=slurm-%j.err     # Hata dosyasi
+                .. code-block:: bash
 
-    eval "$(/truba/home/$USER/miniconda3/bin/conda shell.bash hook)"
-    conda activate qnn-torch-env
-    python sequential_qnn.py
+                    sbatch nonsequential_qnn.slurm
 
-.. note::
-    Betikteki ``[USERNAME]`` yertutucusunu kullanıcı adınızla değiştirmeyi unutmayın.
+            .. tab-item:: nonsequential_qnn.slurm
 
-.. note::
-    En alttaki ``python sequential_qnn.py`` yerine ``python nonsequential_qnn.py`` yazarak sıralı olmayan hibrit modeli de kuyruğa gönderebilirdik.
+                .. code-block:: bash
+            
+                    #!/bin/bash
 
-İşi kuyruğa gönderin.
+                    #SBATCH --output=slurm-%j.out
+                    #SBATCH --error=slurm-%j.err
+                    #SBATCH --time=00:15:00
+                    #SBATCH --job-name=nonsequential_qnn
 
-.. code-block:: bash
+                    #SBATCH -p debug
+                    #SBATCH --partition=akya-cuda
+                    #SBATCH --gres=gpu:1
+                    #SBATCH --ntasks=1
+                    #SBATCH --nodes=1
+                    #SBATCH --cpus-per-task=10
 
-    sbatch qnn-job.sh
+                    apptainer exec --nv miniconda3-user.sif python nonsequential_qnn.py
 
-Gönderdiğiniz işin durumunu kontrol edin.
+            .. tab-item:: nonsequential_qnn.py
+                
+                .. code-block:: python
 
-.. code-block:: bash
-
-    squeue
-
-İş bittikten sonra terminal çıktısını görüntüleyin.
-
-.. code-block:: bash
-
-    cat sequential_qnn.out
-
-PyTorch'un CUDA cihazlarını görüp görmediğini denetleme
-=======================================================
-
-Kodumuzun istenildiği gibi GPU'da çalışıp çalışmadığını anlamak için aşağıdaki gibi bir örnek kod oluşturabiliriz
-
-``example.py``
-
-.. code-block:: python
-
-    import torch
-
-    print(torch.cuda.is_available())
-    print(torch.cuda.get_device_name(0))
-
-Kuyruğa iş göndermek için bir `slurm betiği <https://slurm.schedmd.com/sbatch.html>`_ hazırlayın: ``example-job.sh``
-
-.. code-block:: bash
-
-    #!/bin/bash
-    #SBATCH -p debug                 # Kuyruk adi: Bu gibi deneme kodlari için debug kuyrugunu kullaniyoruz 
-    #SBATCH -C akya-cuda             # Kisitlama: GPU bulunan bir sunucuyu  verdiğinizden emin olun.
-    #SBATCH -A [USERNAME]            # Kullanici adi
-    #SBATCH -J example               # Gonderilen isin ismi
-    #SBATCH -o example.out           # Ciktinin yazilacagi dosya adi
-    #SBATCH --gres=gpu:1             # Her bir sunucuda kac GPU istiyorsunuz? Kumeleri kontrol edin.
-    #SBATCH -N 1                     # Gorev kac node'da calisacak?
-    #SBATCH -n 1                     # Ayni gorevden kac adet calistirilacak?
-    #SBATCH --cpus-per-task 10       # Her bir gorev kac cekirdek kullanacak? Kumeleri kontrol edin.
-    #SBATCH --time=0:15:00           # Sure siniri koyun.
-    #SBATCH --error=slurm-%j.err     # Hata dosyasi
-
-    eval "$(/truba/home/$USER/miniconda3/bin/conda shell.bash hook)"
-    conda activate qnn-torch-env
-    python example.py
-
-İşi kuyruğa gönderin.
-
-.. code-block:: bash
-
-    sbatch example-job.sh
-
-İş bittikten sonra terminal çıktısını görüntüleyin.
-
-.. code-block:: bash
-
-    cat example.out
-
-Eğer CUDA cihazı kullanıldıysa çıktı aşağıdaki gibidir.
-
-.. admonition:: Çıktı
-   :class: dropdown, information
-
-   .. code-block:: python
-
-        True
-        Tesla V100-SXM2-16GB
+                    import torch
+                    import pennylane as qml
+                    import numpy as np
+                    from sklearn.datasets import make_moons
 
 
+                    # Rastgele sayılar için tohum değerlerini belirleme 
+                    torch.manual_seed(42)
+                    np.random.seed(42)
+
+                    X, y = make_moons(n_samples=200, noise=0.1)
+                    y_ = torch.unsqueeze(torch.tensor(y), 1)  # one-hot encoding ile kodlanmış etiketler
+                    y_hot = torch.scatter(torch.zeros((200, 2)), 1, y_, 1)
+
+                    n_qubits = 2
+                    dev = qml.device("lightning.gpu", wires=n_qubits)
+
+                    # Quantum Node oluşturma
+                    @qml.qnode(dev)
+                    def qnode(inputs, weights):
+                        qml.AngleEmbedding(inputs, wires=range(n_qubits))
+                        qml.BasicEntanglerLayers(weights, wires=range(n_qubits))
+                        return [qml.expval(qml.PauliZ(wires=i)) for i in range(n_qubits)]
+
+                    n_layers = 6
+                    weight_shapes = {"weights": (n_layers, n_qubits)}
+
+                    # Quantum Node'u kuantum katmanına çevirme
+                    qlayer = qml.qnn.TorchLayer(qnode, weight_shapes)
+
+                    # Modeli oluşturma
+                    class HybridModel(torch.nn.Module):
+                        def __init__(self):
+                            super().__init__()
+                            self.clayer_1 = torch.nn.Linear(2, 4)
+                            self.qlayer_1 = qml.qnn.TorchLayer(qnode, weight_shapes)
+                            self.qlayer_2 = qml.qnn.TorchLayer(qnode, weight_shapes)
+                            self.clayer_2 = torch.nn.Linear(4, 2)
+                            self.softmax = torch.nn.Softmax(dim=1)
+
+                        def forward(self, x):
+                            x = self.clayer_1(x)
+                            x_1, x_2 = torch.split(x, 2, dim=1)
+                            x_1 = self.qlayer_1(x_1)
+                            x_2 = self.qlayer_2(x_2)
+                            x = torch.cat([x_1, x_2], axis=1)
+                            x = self.clayer_2(x)
+                            return self.softmax(x)
+
+                    model = HybridModel()
+
+                    # Modeli eğitme
+                    opt = torch.optim.SGD(model.parameters(), lr=0.2)
+                    loss = torch.nn.L1Loss()
+
+                    X = torch.tensor(X, requires_grad=True).float()
+                    y_hot = y_hot.float()
+
+                    batch_size = 5
+                    batches = 200 // batch_size
+
+                    data_loader = torch.utils.data.DataLoader(
+                        list(zip(X, y_hot)), batch_size=5, shuffle=True, drop_last=True
+                    )
+
+                    epochs = 6
+
+                    for epoch in range(epochs):
+
+                        running_loss = 0
+
+                        for xs, ys in data_loader:
+                            opt.zero_grad()
+
+                            loss_evaluated = loss(model(xs), ys)
+                            loss_evaluated.backward()
+
+                            opt.step()
+
+                            running_loss += loss_evaluated
+
+                        avg_loss = running_loss / batches
+                        print("Average loss over epoch {}: {:.4f}".format(epoch + 1, avg_loss))
+
+                    y_pred = model(X)
+                    predictions = torch.argmax(y_pred, axis=1).detach().numpy()
+
+                    correct = [1 if p == p_true else 0 for p, p_true in zip(predictions, y)]
+                    accuracy = sum(correct) / len(correct)
+                    print(f"Accuracy: {accuracy * 100}%")

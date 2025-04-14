@@ -5,52 +5,34 @@
 Qiskit ve PennyLane Kurulumları
 ===============================
 
-.. warning::
-    Belgenin geri kalanında ev dizinine Miniconda kurulumunun yapılmış olduğu kabul edilmektedir. Ev dizininizde Miniconda kurulu değilse kurulumu :ref:`Python Kılavuzu'nu <python-kilavuzu>` takip ederek yapabilirsiniz.
+--------------------------
+Konteyner Oluşturma
+--------------------------
+İlgili paketleri kurmak için :ref:`Python ve Konteyner <python-container>` belgesinde de anlatıldığı gibi içine kurmak istediğiniz klasöre geldikten sonra konteyneri aşağıdaki gibi oluşturunuz.
 
-    Merkezi anaconda kullanımı hakkındaki bilgiye ulaşmak için :ref:`tıklayınız... <merkezi-anaconda>`.
+.. code-block:: bash
+    
+    cp -r /arf/sw/containers/miniconda3/miniconda3-container.sif ./
+    apptainer build --sandbox miniconda3-user miniconda3-container.sif
+
+daha sonra konteyneri aşağıdaki gibi açınız.
+
+.. code-block:: bash
+
+    apptainer shell --no-home --writable --fakeroot miniconda3-user
+    # veya
+    apptainer shell --no-home --writable miniconda3-user
+
 
 --------------------------
 Qiskit Kurulumu
 --------------------------
 
-Mevcut shell oturumunuzda conda’nın temel ortamını etkinleştirin:
-
-.. code-block:: bash
-    
-    eval "$(/truba/home/$USER/miniconda3/bin/conda shell.bash hook)"
-
-Conda kullanarak sanal ortam yaratın ve yarattığınız ortamı aktifleştirin.
-
-.. code-block:: bash
-    
-    conda create --name qcomp-env
-    conda activate qcomp-env
-    conda list
-
-.. note::
-    İstediğiniz zaman sanal ortamı kaldırıp baştan başlayabilirsiniz:
-
-    .. code-block:: bash
-
-        conda deactivate
-        conda remove -n qcomp --all
-        conda create --name qcomp-env
-        conda activate qcomp-env
-
-Python ve GPU'da çalıştırmak için gereken paketleri kurun.
+Qiskit'i ve onu GPU'da çalıştırmak için gerekli olan Aer-GPU kütüphanelerini aşağıdaki şekilde kurabilirsiniz.
 
 .. code-block:: bash
 
-    conda install python=3.8
-    conda install -c conda-forge cudatoolkit=11.2 cudnn=8.1.0
-
-
-Qiskit paketlerini kurun.
-
-.. code-block:: bash
-
-    pip install qiskit
+    pip install qiskit==1.4.2
     pip install qiskit-aer-gpu
 
 .. note::
@@ -61,121 +43,166 @@ Qiskit paketlerini kurun.
 PennyLane Kurulumu
 ----------------------------------------------
 
-Aynı virtual environment aktifken yine benzer şekilde PennyLane paketini kurun.
+Benzer şekilde Pennylane'i ve onu GPU'da çalıştırmak için gerekli olan Lightning-GPU kütüphanelerini aşağıdaki şekilde kurabilirsiniz.
 
 .. code-block:: bash
 
-     pip install pennylane --upgrade
-
-PennyLane'e Qiskit eklentisini kurarak Qiskit içinde bulunan cihazları PennyLane içinde de kullanabilirsiniz. Bunun için aşağıdaki paketini kurun.
-
-.. code-block:: bash
-
-    pip install pennylane-qiskit
+    pip install pennylane
+    pip install pennylane-lightning-gpu
 
 
-.. note::
-
-    Kurulum ve kullanım hakkında daha fazla bilgi için dokümantasyon `dokümantasyon <https://pennylane.ai/>`_ sayfasına bakabilirsiniz.
+Kurulum ve kullanım hakkında daha fazla bilgi için dokümantasyon `dokümantasyon <https://pennylane.ai/>`_ sayfasına bakabilirsiniz.
 
 
 
-
-----------------------------------------------
-SLURM Betik Dosyası ile Kuyruğa İş Gönderme
-----------------------------------------------
-
-Örnek kod hazırlayın: ``install_debug.py``
-
-.. code-block:: python
-
-    import qiskit
-    import pennylane as qml
-
-    print("Qiskit version:", qiskit.__version__)
-    dev = qml.device('qiskit.aer', wires=2)
-    print(dev)
-
-    # Kuantum devresini oluşturma
-    circ = qiskit.QuantumCircuit(2)
-    circ.h(0)
-    circ.cx(0, 1)
-    circ.measure_all()
-
-    # GPU'da çalışacak simülatorü ayarlama
-    simulator = qiskit.Aer.get_backend('aer_simulator')
-    simulator.set_options(device='GPU')
-    circ = qiskit.transpile(circ, simulator)
-
-    # Simulasyonu çalıştırma    
-    result = simulator.run(circ).result()
-    print(result)
-
-Qiskit ve PennyLane'in doğru çalıştığından emin olmak için çıktının aşağıdaki gibi olduğundan emin olun.
-
-.. admonition:: Çıktı
-   :class: dropdown, information
-
-   .. code-block:: python
-
-        Qiskit version: 0.21.0
-        Qiskit PennyLane plugin
-        Short name: qiskit.aer
-        Package: pennylane_qiskit
-        Plugin version: 0.24.0
-        Author: Xanadu
-        Wires: 2
-        Shots: 1024
-   
-Eğer bir CUDA cihazı göremiyorsa yukarıdaki çıktıya ek olarak sistem aşağıdaki gibi hata verecektir. GPU'da çalıştırmak istediğiniz kodlarda bu hatanın olmadığından emin olun. 
-
-.. admonition:: Çıktı
-   :class: dropdown, information
-
-   .. code-block:: python
-
-        WARNING:qiskit.providers.aer.backends.aerbackend:Simulation failed and returned the following error message:
-        ERROR: Failed to load qobj: No CUDA device available!
-
-
-Kuyruğa iş göndermek için bir `slurm betiği <https://slurm.schedmd.com/sbatch.html>`_ hazırlayın: ``submit-install_debug-job.sh``
+--------------------------
+Kurulumları Test Etme
+--------------------------
+Kütüphanelerin kurulumunu tamamladıktan sonra konteynerden çıkmak için:
 
 .. code-block:: bash
 
-    #!/bin/bash
-    #SBATCH -p debug              # Kuyruk adi: Bu gibi deneme kodlari için debug kuyrugunu kullaniyoruz 
-    #SBATCH -C akya-cuda          # Kisitlama: GPU bulunan bir sunucuyu  verdiğinizden emin olun.
-    #SBATCH -A [USERNAME]         # Kullanici adi
-    #SBATCH -J install_debug      # Gonderilen isin ismi
-    #SBATCH -o install_debug.out  # Ciktinin yazilacagi dosya adi
-    #SBATCH --gres=gpu:1          # Her bir sunucuda kac GPU istiyorsunuz? Kumeleri kontrol edin.
-    #SBATCH -N 1                  # Gorev kac node'da calisacak?
-    #SBATCH -n 1                  # Ayni gorevden kac adet calistirilacak?
-    #SBATCH --cpus-per-task 10    # Her bir gorev kac cekirdek kullanacak? Kumeleri kontrol edin.
-    #SBATCH --time=0:15 :00       # Sure siniri koyun.
-    #SBATCH --error=slurm-%j.err  # Hata dosyası
+    exit
 
-    eval "$(/truba/home/$USER/miniconda3/bin/conda shell.bash hook)"
-    conda activate qcomp-env
-    python install_debug.py
+Sonrasında hazırlanan konteynerin imajını oluşturmak için:
 
-.. note::
-    Betikteki ``[USERNAME]`` yertutucusunu kullanıcı adınızla değiştirmeyi unutmayın.
+.. dropdown:: :octicon:`codespaces;1.5em;secondary` Konteyner İmajı Oluşturma(Tıklayınız)
+    :color: info
 
-İşi kuyruğa gönderin.
+        .. tab-set::
 
-.. code-block:: bash
+            .. tab-item:: İş Gönderme
 
-    sbatch submit-install_debug-job.sh
+                .. code-block:: bash
 
-Gönderdiğiniz işin durumunu kontrol edin.
+                    sbatch build.slurm
 
-.. code-block:: bash
+            .. tab-item:: build.slurm
 
-    squeue
+                .. code-block:: bash
+            
+                    #!/bin/bash
+                    
+                    #SBATCH --output=slurm-%j.out
+                    #SBATCH --error=slurm-%j.err
+                    #SBATCH --time=00:15:00
+                    #SBATCH --job-name=build
 
-İş bittikten sonra terminal çıktısını görüntüleyin.
+                    #SBATCH -p debug
+                    #SBATCH --partition=orfoz
+                    #SBATCH --ntasks=1
+                    #SBATCH --nodes=1
+                    #SBATCH -C weka
+                    #SBATCH --cpus-per-task=55
 
-.. code-block:: bash
+                    apptainer build miniconda3-user.sif miniconda3-user
 
-    cat install_debug.out
+
+Konteyner imajını oluşturduktan sonra Qiskit ve Pennylane kurulumlarını test etmek için aşağıdaki örnek kodları kullanabilirsiniz.
+
+.. dropdown:: :octicon:`codespaces;1.5em;secondary` Qiskit GPU Testi(Tıklayınız)
+    :color: info
+
+        .. tab-set::
+
+            .. tab-item:: İş Gönderme
+
+                .. code-block:: bash
+
+                    sbatch qiskit_test.slurm
+
+            .. tab-item:: qiskit_test.slurm
+
+                .. code-block:: bash
+            
+                    #!/bin/bash
+
+                    #SBATCH --output=slurm-%j.out
+                    #SBATCH --error=slurm-%j.err
+                    #SBATCH --time=00:15:00
+                    #SBATCH --job-name=qiskit_test
+
+                    #SBATCH -p debug
+                    #SBATCH --partition=akya-cuda
+                    #SBATCH --gres=gpu:1
+                    #SBATCH --ntasks=1
+                    #SBATCH --nodes=1
+                    #SBATCH --cpus-per-task=10
+
+                    apptainer exec --nv miniconda3-user.sif python qiskit_test.py
+
+            .. tab-item:: qiskit_test.py
+                
+                ..  code-block:: python
+
+                    from qiskit import QuantumCircuit, transpile
+                    from qiskit_aer import AerSimulator
+
+                    # Kuantum devresini oluşturma
+                    circ = QuantumCircuit(2)
+                    circ.h(0)
+                    circ.cx(0, 1)
+                    circ.measure_all()                      
+
+                    # GPU'da çalışacak simülatorü ayarlama
+                    simulator = AerSimulator(device='GPU')
+                    circ = transpile(circ, simulator)
+
+                    # Simulasyonu çalıştırma
+                    result = simulator.run(circ, shots=1024).result()
+                    counts = result.get_counts(circ)
+
+                    print(counts)
+
+
+.. dropdown:: :octicon:`codespaces;1.5em;secondary` Pennylane GPU Testi(Tıklayınız)
+    :color: info
+
+        .. tab-set::
+
+            .. tab-item:: İş Gönderme
+
+                .. code-block:: bash
+
+                    sbatch pl_test.slurm
+
+            .. tab-item:: pl_test.slurm
+
+                .. code-block:: bash
+            
+                    #!/bin/bash
+
+                    #SBATCH --output=slurm-%j.out
+                    #SBATCH --error=slurm-%j.err
+                    #SBATCH --time=00:15:00
+                    #SBATCH --job-name=pl_test
+
+                    #SBATCH -p debug
+                    #SBATCH --partition=akya-cuda
+                    #SBATCH --gres=gpu:1
+                    #SBATCH --ntasks=1
+                    #SBATCH --nodes=1
+                    #SBATCH --cpus-per-task=10
+
+                    apptainer exec --nv miniconda3-user.sif python pl_test.py
+
+            .. tab-item:: pl_test.py
+                
+                ..  code-block:: python
+
+                    import pennylane as qml
+
+                    # GPU'da çalışacak simülatorü ayarlama
+                    dev = qml.device('lightning.gpu', wires=2, shots=1024)
+
+                    @qml.qnode(dev)
+                    def circuit():
+                        # Kuantum devresini oluşturma
+                        qml.Hadamard(0)
+                        qml.CNOT(wires=[0, 1])
+
+                        return qml.counts()
+
+                    # Simulasyonu çalıştırma
+                    counts = circuit()
+                    print(counts)
